@@ -8,7 +8,8 @@
 #define MNIST_TEST_LABELS_FILE "t10k-labels-idx1-ubyte"
 #define MNIST_IMAGE_SIZE 784
 #define NUM_IMAGES 10000
-int Conv_3D(float *input, const float *weights, float *out, const float * biases, 
+#define SHIFT 8
+int Conv_3D_layer1(float *input, const float *weights, int64_t *out, const float * biases, 
             int kerenl_ch, int kernel_row, int kernel_col,int kernel_cnt, int ouput_row, int output_col, int input_row, int input_col)
 {
   int i, j, k, l, s, p, n,m; 
@@ -19,7 +20,7 @@ int Conv_3D(float *input, const float *weights, float *out, const float * biases
     {
       for(j = 0; j < output_col; j++)         // output 열의 변수 j
       {
-        *(out + ouput_row * output_col * m  + output_col * i + j) = *(biases + m); //bias 연산
+        *(out + ouput_row * output_col * m  + output_col * i + j) = (int64_t)(*(biases + m)*SHIFT*SHIFT); //bias 연산
         for(n = 0; n < kerenl_ch; n ++)
           {
             l = 0;                     // kernel 행의 값 0 초기화
@@ -28,8 +29,8 @@ int Conv_3D(float *input, const float *weights, float *out, const float * biases
                 p = 0;                    //kernel 열의 값 0 초기화  
               for(s = j; s < j + kernel_col ; s++) // input 열의 변수 s, output 열의 값에 따라 input Conv 시작 열 바뀜.
               {
-                *(out + ouput_row * output_col* m + output_col * i + j) += *(input + n *input_row * input_col + k * input_col + s) *                            
-                                                                          *(weights + kernel_col * kernel_row * kerenl_ch * m + kernel_col * kernel_row * n  + kernel_col * l + p); 
+                *(out + ouput_row * output_col* m + output_col * i + j) += (int64_t)(*(input + n *input_row * input_col + k * input_col + s)*SHIFT) *                            
+                                                                          (int64_t)(*(weights + kernel_col * kernel_row * kerenl_ch * m + kernel_col * kernel_row * n  + kernel_col * l + p)*SHIFT); 
                   p++;
               }                 // kernel 열의 값 1씩 증가 
 
@@ -41,9 +42,41 @@ int Conv_3D(float *input, const float *weights, float *out, const float * biases
   }
 }
 
+int Conv_3D_layer3(int64_t *input, const float *weights, int64_t *out, const float * biases, 
+            int kerenl_ch, int kernel_row, int kernel_col,int kernel_cnt, int ouput_row, int output_col, int input_row, int input_col)
+{
+  int i, j, k, l, s, p, n,m; 
+
+  for(m = 0; m < kernel_cnt; m ++)            // 커널의 개수 변수 m
+  {
+    for(i = 0; i < ouput_row; i++)           //  ouput  행의 변수 i , 최상단 반복문
+    {
+      for(j = 0; j < output_col; j++)         // output 열의 변수 j
+      {
+        *(out + ouput_row * output_col * m  + output_col * i + j) = (int64_t)(*(biases + m)*SHIFT*SHIFT*SHIFT); //bias 연산
+        for(n = 0; n < kerenl_ch; n ++)
+          {
+            l = 0;                     // kernel 행의 값 0 초기화
+            for(k = i; k < i + kernel_row; k++) // input 행의 변수 k, output 행의 값에 따라 input Conv 시작 행 바뀜.
+            {
+                p = 0;                    //kernel 열의 값 0 초기화  
+              for(s = j; s < j + kernel_col ; s++) // input 열의 변수 s, output 열의 값에 따라 input Conv 시작 열 바뀜.
+              {
+                *(out + ouput_row * output_col* m + output_col * i + j) += *(input + n *input_row * input_col + k * input_col + s) *                            
+                                                                          (int64_t)(*(weights + kernel_col * kernel_row * kerenl_ch * m + kernel_col * kernel_row * n  + kernel_col * l + p)*SHIFT); 
+                  p++;
+              }                 // kernel 열의 값 1씩 증가 
+
+            l++;                        // kernel 행의 값 1씩 증가
+           }
+        }
+      }
+    }   
+  }
+}
 
 // Activaction Function
-  int Relu(float *out, int out_cnt, int out_row, int out_col )
+  int Relu(int64_t *out, int out_cnt, int out_row, int out_col )
   {
     int i;
     for(i = 0; i < out_cnt * out_row * out_col; i ++) // 전체 SIZE
@@ -60,7 +93,7 @@ int Conv_3D(float *input, const float *weights, float *out, const float * biases
   }
 
   //  Out 초기화
-  int Out_init(float *out, int out_row, int out_col, int out_ch)
+  int Out_init(int64_t *out, int out_row, int out_col, int out_ch)
   {
     int i;
     for(i = 0; i < out_row * out_col * out_ch; i ++)
@@ -71,7 +104,7 @@ int Conv_3D(float *input, const float *weights, float *out, const float * biases
   }    
 
  // MAX Pooling
-  int Max_Pooling(float *input, float *out, int input_row, int input_col, int input_ch,int output_row, int output_col)
+  int Max_Pooling(int64_t *input, int64_t *out, int input_row, int input_col, int input_ch,int output_row, int output_col)
   {
     int i, j, l, k, s;
     float max_1,max_2, max;
@@ -123,21 +156,44 @@ int Conv_3D(float *input, const float *weights, float *out, const float * biases
     }
   }
 
-int Full_Connection(float *input, float *out, const float * weights, const float *biases, int out_size, int input_size)
+int Full_Connection_layer5(int64_t *input, int64_t *out, const float * weights, const float *biases, int out_size, int input_size)
 {
   int i, j;
   for(i = 0; i < out_size; i++)                     // output size
   {
-    *(out + i) =  *(biases + i);           // bias 연산
+    *(out + i) =  (int64_t)(*(biases + i)*SHIFT*SHIFT*SHIFT*SHIFT);           // bias 연산
     for(j = 0; j < input_size; j++)                // input size
     {
-      *(out + i) += *(input + j) * *(weights + input_size * i + j) ;   // full_connection 연산
+      *(out + i) += *(input + j) * (int64_t)(*(weights + input_size * i + j)*SHIFT);   // full_connection 연산
     }
   }
 }
-
+int Full_Connection_layer6(int64_t *input, int64_t *out, const float * weights, const float *biases, int out_size, int input_size)
+{
+  int i, j;
+  for(i = 0; i < out_size; i++)                     // output size
+  {
+    *(out + i) =  (int64_t)(*(biases + i)*SHIFT*SHIFT*SHIFT*SHIFT*SHIFT);          // bias 연산
+    for(j = 0; j < input_size; j++)                // input size
+    {
+      *(out + i) += *(input + j) * (int64_t)(*(weights + input_size * i + j)*SHIFT);    // full_connection 연산
+    }
+  }
+}
+int Full_Connection_layer7(int64_t *input, int64_t *out, const float * weights, const float *biases, int out_size, int input_size)
+{
+  int i, j;
+  for(i = 0; i < out_size; i++)                     // output size
+  {
+    *(out + i) =  (int64_t)(*(biases + i)*SHIFT*SHIFT*SHIFT*SHIFT*SHIFT*SHIFT);          // bias 연산
+    for(j = 0; j < input_size; j++)                // input size
+    {
+      *(out + i) += *(input + j) * (int64_t)(*(weights + input_size * i + j)*SHIFT);   // full_connection 연산
+    }
+  }
+}
 // Activation Function (1D)
-int Relu_1D(float *out, int out_size)
+int Relu_1D(int64_t *out, int out_size)
 {
   int i;
   for(i = 0; i <  out_size; i ++ )
@@ -246,56 +302,62 @@ int main() {
   //layer 1 (3D Conv, input = 32 x 32 x 1, output = 28 x 28 x 6, kernel = 5 x 5 x 1 x 6)
   const float *w1 = &weights_C1[0][0][0][0];
   const float *b1 = &biases_C1[0];
-  float *out_1 = (float*)malloc(sizeof(float)*28*28*6);
-  Conv_3D(Pad_input, w1, out_1, b1, 1, 5, 5, 6, 28, 28, 32, 32);
+  int64_t *out_1 = (int64_t*)malloc(sizeof(int64_t)*28*28*6);
+  Conv_3D_layer1(Pad_input, w1, out_1, b1, 1, 5, 5, 6, 28, 28, 32, 32);
   Relu(out_1, 6, 28, 28);
  
 
 
   // layer 2 (Max Poolong, input = 28 x 28 x 6, output = 14 x 14 x 6)
-  float *out_2 = (float*)malloc(sizeof(float)*14*14*6);
+  int64_t *out_2 = (int64_t*)malloc(sizeof(int64_t)*14*14*6);
   Max_Pooling(out_1, out_2, 28,28,6,14,14);
   
     
   //layer 3 (3D Conv, input = 14 x 14 x 6, output = 10 x 10 x 16, kernel = 5 x 5 x 6 x 16)
   const float *w2 = &weights_C2[0][0][0][0];
   const float *b2 = &biases_C2[0];
-  float *out_3 = (float*)malloc(sizeof(float)*10*10*16);
-  Conv_3D(out_2, w2, out_3, b2, 6, 5, 5, 16, 10, 10, 14, 14);
+  int64_t *out_3 = (int64_t*)malloc(sizeof(int64_t)*10*10*16);
+  Conv_3D_layer3(out_2, w2, out_3, b2, 6, 5, 5, 16, 10, 10, 14, 14);
   Relu(out_3, 16, 10, 10);
 
   //layer 4 (Max Pooling, input = 10 x 10 x 16, output = 5 x 5 x 16)
-  float *out_4 = (float*)malloc(sizeof(float)*5*5*16);
+  int64_t *out_4 = (int64_t*)malloc(sizeof(int64_t)*5*5*16);
   Max_Pooling(out_3, out_4, 10,10,16,5,5);
 
  //layer 5 (FC, input = 400, output = 120)
   const float *w3 = &weights_F1[0][0];
   const float *b3 = &biases_F1[0];
-  float *out_5 = (float*)malloc(sizeof(float)*120);
-  Full_Connection(out_4, out_5, w3, b3, 120, 400 );
+  int64_t *out_5 = (int64_t*)malloc(sizeof(int64_t)*120);
+  Full_Connection_layer5(out_4, out_5, w3, b3, 120, 400 );
   Relu_1D(out_5, 120);
   
  //layer 6 (FC, input = 120, output = 84)
   const float *w4 = &weights_F2[0][0];
   const float *b4 = &biases_F2[0];
-  float *out_6 = (float*)malloc(sizeof(float)*84);
-  Full_Connection(out_5, out_6, w4, b4, 84, 120 );
+  int64_t *out_6 = (int64_t*)malloc(sizeof(int64_t)*84);
+  Full_Connection_layer6(out_5, out_6, w4, b4, 84, 120 );
   Relu_1D(out_6, 84);
 
   //layer 7 (FC, input = 84, output = 10)
   const float *w5 = &weights_F3[0][0];
   const float *b5 = &biases_F3[0];
-  float *out_7 = (float*)malloc(sizeof(float)*10);
-  Full_Connection(out_6, out_7, w5, b5, 10, 84 );
+  int64_t *out_7 = (int64_t*)malloc(sizeof(int64_t)*10);
+  Full_Connection_layer7(out_6, out_7, w5, b5, 10, 84 );
 
   //숫자값 추론
-  float max = *out_7;
+  float max = (*out_7)/SHIFT/SHIFT/SHIFT/SHIFT/SHIFT/SHIFT;
   int maxlable = 0;
+/*
+   for(int r = 0; r < 10; r++)
+  {
+    printf("%d : %f\n",r, (float)*(out_7 + r)/256/256/256/256/256/256);
+  }
+*/
    for(int k = 1; k < 10; k++)
   {
-    if(max < *(out_7 + k))
+    if(max < *(out_7+ k)/SHIFT/SHIFT/SHIFT/SHIFT/SHIFT/SHIFT)
     {
-      max = *(out_7 + k);
+      max = *(out_7+ k)/SHIFT/SHIFT/SHIFT/SHIFT/SHIFT/SHIFT;
       maxlable = k;
     }
   }
@@ -303,7 +365,7 @@ int main() {
     {
       accuracy = accuracy + 1;
     }
-  //printf("%d, %f\n", maxlable, max);
+  //printf("%d : %f\n", maxlable, max);
   free(out_1);
   free(out_2);
   free(out_3);
@@ -314,10 +376,13 @@ int main() {
   free(images[label_size]);
     
   }
-  
+
   printf("%s : %d", "Accuracy",accuracy);    
-    // Close the files
     fclose(images_file);
+    fclose(labels_file);
+}
+
+
     fclose(labels_file);
 }
 
